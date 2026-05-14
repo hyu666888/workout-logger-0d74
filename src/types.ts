@@ -6,7 +6,8 @@ export type Exercise =
   | 'Pull Up'
   | 'Push Up'
   | 'Bicep Curl'
-  | 'Plank';
+  | 'Plank'
+  | 'Lunge';
 
 export const EXERCISES: Exercise[] = [
   'Bench Press',
@@ -17,6 +18,7 @@ export const EXERCISES: Exercise[] = [
   'Push Up',
   'Bicep Curl',
   'Plank',
+  'Lunge',
 ];
 
 export interface WorkoutEntry {

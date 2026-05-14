@@ -12,6 +12,7 @@ const EXERCISE_ICONS: Record<Exercise, string> = {
   'Push Up': '↑',
   'Bicep Curl': '🦾',
   'Plank': '🧘',
+  'Lunge': '🦵',
 };
 
 function todayDate() {
