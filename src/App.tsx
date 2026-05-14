@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { EXERCISES, type Exercise } from './types';
+import { useState, useEffect, useRef } from 'react';
+import { EXERCISES, type Exercise, type WorkoutEntry } from './types';
 import { useWorkouts } from './useWorkouts';
 import WeeklyChart from './WeeklyChart';
 
@@ -18,6 +18,10 @@ function todayDate() {
   return new Date().toISOString().split('T')[0];
 }
 
+function formatTime(ts: number) {
+  return new Date(ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+
 export default function App() {
   const { entries, addEntry, deleteEntry } = useWorkouts();
   const [exercise, setExercise] = useState<Exercise>('Bench Press');
@@ -26,9 +30,32 @@ export default function App() {
   const [weight, setWeight] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [error, setError] = useState('');
+  const [pendingDelete, setPendingDelete] = useState<WorkoutEntry | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, []);
+
+  function handleDelete(entry: WorkoutEntry) {
+    if (pendingDelete) deleteEntry(pendingDelete.id);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setPendingDelete(entry);
+    timerRef.current = setTimeout(() => {
+      deleteEntry(entry.id);
+      setPendingDelete(null);
+      timerRef.current = null;
+    }, 4000);
+  }
+
+  function handleUndo() {
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    setPendingDelete(null);
+  }
 
   const today = todayDate();
-  const todayEntries = entries.filter(e => e.date === today);
+  const visibleEntries = entries.filter(e => e.id !== pendingDelete?.id);
+  const todayEntries = visibleEntries.filter(e => e.date === today);
   const isBodyweight = ['Pull Up', 'Push Up', 'Plank'].includes(exercise);
 
   const todayVolume = todayEntries.reduce(
@@ -41,16 +68,34 @@ export default function App() {
     const s = parseInt(sets);
     const r = parseInt(reps);
     const w = parseFloat(weight) || 0;
-    if (!s || s < 1 || !r || r < 1) {
-      setError('Sets and reps must be at least 1.');
-      return;
-    }
+    if (!s || s < 1 || !r || r < 1) { setError('Sets and reps must be at least 1.'); return; }
     addEntry({ exercise, sets: s, reps: r, weight: isBodyweight ? 0 : w, date: today });
     setError('');
     setShowForm(false);
     setSets('3');
     setReps('10');
     setWeight('');
+  }
+
+  function EntryCard({ entry, dimmed = false }: { entry: WorkoutEntry; dimmed?: boolean }) {
+    return (
+      <div className={`bg-white rounded-2xl border border-stone-200 px-4 py-3 flex items-center shadow-sm${dimmed ? ' opacity-80' : ''}`}>
+        <span className="text-2xl mr-3">{EXERCISE_ICONS[entry.exercise]}</span>
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-stone-800 text-sm truncate">{entry.exercise}</p>
+          <p className="text-stone-500 text-xs mt-0.5">
+            {entry.sets} sets × {entry.reps} reps
+            {entry.weight > 0 ? ` @ ${entry.weight} lbs` : ' (bodyweight)'}
+          </p>
+          <p className="text-stone-400 text-xs mt-0.5">{formatTime(entry.createdAt)}</p>
+        </div>
+        <button
+          onClick={() => handleDelete(entry)}
+          className="ml-3 text-stone-300 hover:text-red-400 transition-colors text-lg flex-shrink-0"
+          aria-label="Delete"
+        >✕</button>
+      </div>
+    );
   }
 
   return (
@@ -73,7 +118,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="max-w-md mx-auto px-4 py-5 space-y-5">
+      <main className="max-w-md mx-auto px-4 py-5 space-y-5 pb-28">
         {showForm && (
           <div className="bg-white rounded-2xl shadow-sm border border-stone-200 p-5">
             <h2 className="text-base font-semibold text-stone-700 mb-4">Log a Set</h2>
@@ -149,7 +194,7 @@ export default function App() {
           </div>
         </div>
 
-        <WeeklyChart entries={entries} />
+        <WeeklyChart entries={visibleEntries} />
 
         <div>
           <h2 className="text-sm font-semibold text-stone-500 uppercase tracking-wider mb-3">Today's Log</h2>
@@ -159,47 +204,17 @@ export default function App() {
             </div>
           ) : (
             <div className="space-y-2">
-              {todayEntries.map(entry => (
-                <div key={entry.id} className="bg-white rounded-2xl border border-stone-200 px-4 py-3 flex items-center shadow-sm">
-                  <span className="text-2xl mr-3">{EXERCISE_ICONS[entry.exercise]}</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-stone-800 text-sm truncate">{entry.exercise}</p>
-                    <p className="text-stone-500 text-xs mt-0.5">
-                      {entry.sets} sets × {entry.reps} reps
-                      {entry.weight > 0 ? ` @ ${entry.weight} lbs` : ' (bodyweight)'}
-                    </p>
-                  </div>
-                  <button onClick={() => deleteEntry(entry.id)}
-                    className="ml-3 text-stone-300 hover:text-red-400 transition-colors text-lg flex-shrink-0"
-                    aria-label="Delete"
-                  >✕</button>
-                </div>
-              ))}
+              {todayEntries.map(entry => <EntryCard key={entry.id} entry={entry} />)}
             </div>
           )}
         </div>
 
-        {entries.some(e => e.date !== today) && (
+        {visibleEntries.some(e => e.date !== today) && (
           <div>
             <h2 className="text-sm font-semibold text-stone-500 uppercase tracking-wider mb-3">History</h2>
             <div className="space-y-2">
-              {entries.filter(e => e.date !== today).slice(0, 30).map(entry => (
-                <div key={entry.id} className="bg-white rounded-2xl border border-stone-200 px-4 py-3 flex items-center shadow-sm opacity-80">
-                  <span className="text-xl mr-3">{EXERCISE_ICONS[entry.exercise]}</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-stone-700 text-sm truncate">{entry.exercise}</p>
-                    <p className="text-stone-400 text-xs mt-0.5">
-                      {entry.sets} × {entry.reps}
-                      {entry.weight > 0 ? ` @ ${entry.weight}lbs` : ''}
-                      {' · '}
-                      {new Date(entry.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                    </p>
-                  </div>
-                  <button onClick={() => deleteEntry(entry.id)}
-                    className="ml-3 text-stone-300 hover:text-red-400 transition-colors flex-shrink-0"
-                    aria-label="Delete"
-                  >✕</button>
-                </div>
+              {visibleEntries.filter(e => e.date !== today).slice(0, 30).map(entry => (
+                <EntryCard key={entry.id} entry={entry} dimmed />
               ))}
             </div>
           </div>
@@ -207,6 +222,22 @@ export default function App() {
 
         <div className="h-6" />
       </main>
+
+      {pendingDelete && (
+        <div className="fixed bottom-6 inset-x-0 flex justify-center px-4 z-50 pointer-events-none">
+          <div className="bg-stone-800 text-white rounded-2xl px-4 py-3 flex items-center gap-4 shadow-xl w-full max-w-sm pointer-events-auto">
+            <span className="flex-1 text-sm">
+              Deleted <span className="font-semibold">{pendingDelete.exercise}</span>
+            </span>
+            <button
+              onClick={handleUndo}
+              className="text-amber-400 hover:text-amber-300 font-semibold text-sm transition-colors"
+            >
+              Undo
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
